@@ -1,6 +1,6 @@
 addon.name = 'hudbegone'
 addon.author = 'SlowCircuit, atom0s'
-addon.version = '1.5.7'
+addon.version = '1.5.8'
 addon.desc = 'Independent controls for native compass, party, alliance, target, solo gauges, status effects and chat HUD visibility.'
 require('common')
 local imgui = require('imgui')

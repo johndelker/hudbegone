@@ -5,8 +5,10 @@ local kernel32 = ffi.load('kernel32')
 local background = {}
 local pattern = 'D9460CD81D????????DFE0F6C4057A05B944000000'
 local locators = {
-    '93800000050220006D656E75202020206C6F6777696E646F',
+    -- The pointer at p-4 belongs to the preceding native catalog record.
+    -- These records resolve LOGWINDO and LOGWIN2, respectively.
     '93000000250100006D656E75202020206C6F6777696E3220',
+    '93000000250100006D656E752020202066756C6C6C6F6720',
 }
 local site, original, allocation, patch
 local slots, enabled = {}, false

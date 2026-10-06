@@ -5,6 +5,13 @@ ffi.cdef[[int __stdcall FlushInstructionCache(void* process, const void* address
 local kernel32 = ffi.load('kernel32')
 local text = {}
 local pattern = '6A7F5152B90F00000083EC3C8BFC55F3A5E8????????8B44246C8B942484000000'
+local row_patterns = {
+    {signature=pattern,offset=17},
+    -- Both chat owners have a four-row child and a scrolling-row child.
+    -- All three call sites pass the same 88-byte layout to the row wrapper.
+    {signature='6A0055568DB00C02000083EC3C83C0048BFCB90F00000050F3A5E8????????0FBF73308B44246C83C458',offset=26},
+    {signature='6A0051578DB00401000083EC3CB90F0000008BFC83C004F3A550E8????????0FBF3B8B74247483C458',offset=26},
+}
 local prologue = {0x8B,0x44,0x24,0x58,0x8B,0x4C,0x24,0x54,0x8B,0x54,0x24,0x50}
 local quad_pattern = '6A1C566A026A05E8????????5F8BCD5E5D33C05B8B548400'
 local hooks, allocation = {}, nil
@@ -28,15 +35,20 @@ local function branch(opcode, from, target)
     return bytes
 end
 function text.initialize()
-    local match = ashita.memory.find('FFXiMain.dll',0,pattern,0,0)
-    local duplicate = ashita.memory.find('FFXiMain.dll',0,pattern,0,1)
-    if not match or match == 0 or (duplicate and duplicate ~= 0) then return false end
-    local candidate = match+17
-    local bytes = ashita.memory.read_array(candidate,5)
-    if not bytes or bytes[1] ~= 0xE8 then return false end
-    local target = (candidate+5+ashita.memory.read_uint32(candidate+1))%4294967296
-    if target == 0 or not same(target,prologue)
-        or not same(target+0x3D,{0x83,0xC4,0x24,0xC3}) then return false end
+    local rows,target = {},nil
+    for _,locator in ipairs(row_patterns) do
+        local match = ashita.memory.find('FFXiMain.dll',0,locator.signature,0,0)
+        local duplicate = ashita.memory.find('FFXiMain.dll',0,locator.signature,0,1)
+        if not match or match == 0 or (duplicate and duplicate ~= 0) then return false end
+        local candidate = match+locator.offset
+        local bytes = ashita.memory.read_array(candidate,5)
+        if not bytes or bytes[1] ~= 0xE8 then return false end
+        local destination = (candidate+5+ashita.memory.read_uint32(candidate+1))%4294967296
+        if destination == 0 or (target and destination ~= target) or not same(destination,prologue)
+            or not same(destination+0x3D,{0x83,0xC4,0x24,0xC3}) then return false end
+        target = destination
+        rows[#rows+1] = {site=candidate,original=bytes,destination=target,offset=0}
+    end
     local quad = ashita.memory.find('FFXiMain.dll',0,quad_pattern,0,0)
     local other = ashita.memory.find('FFXiMain.dll',0,quad_pattern,0,1)
     if not quad or quad == 0 or (other and other ~= 0) then return false end
@@ -46,8 +58,8 @@ function text.initialize()
     local quad_target = (quad_site+5+ashita.memory.read_uint32(quad_site+1))%4294967296
     if not same(quad_target,{0x83,0xEC,0x08,0x8D,0x44,0x24,0,0x56,0x8B,0xF1}) then return false end
     -- Install the glyph hook first, so the row scope can never lack its consumer.
-    hooks = {{site=quad_site,original=quad_original,destination=quad_target,offset=128},
-        {site=candidate,original=bytes,destination=target,offset=0}}
+    hooks = {{site=quad_site,original=quad_original,destination=quad_target,offset=128}}
+    for _,row in ipairs(rows) do hooks[#hooks+1]=row end
     return true
 end
 local function make_cave()
